@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+:root {
+  --background: #030712;
+  --foreground: #f9fafb;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+/* Ken Burns: slow pan + zoom cycling for calming ambience */
+@keyframes kenBurns {
+  0% {
+    transform: scale(1.05) translate(0%, 0%);
+  }
+  25% {
+    transform: scale(1.1) translate(-1.5%, -1%);
+  }
+  50% {
+    transform: scale(1.12) translate(1%, -2%);
+  }
+  75% {
+    transform: scale(1.08) translate(1.5%, 1%);
+  }
+  100% {
+    transform: scale(1.05) translate(0%, 0%);
+  }
+}
+
+.ken-burns {
+  animation: kenBurns 30s ease-in-out infinite;
+  will-change: transform;
+}
