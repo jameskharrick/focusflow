@@ -3,9 +3,35 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { SessionConfig, GeneratedContent } from "@/lib/types";
 
+interface YTPlayerInstance {
+  destroy: () => void;
+  loadVideoById: (id: string) => void;
+}
+
+declare global {
+  interface Window {
+    YT: {
+      Player: new (
+        el: HTMLElement,
+        opts: {
+          videoId: string;
+          playerVars?: Record<string, string | number>;
+          events?: {
+            onReady?: () => void;
+            onStateChange?: (e: { data: number }) => void;
+          };
+        }
+      ) => YTPlayerInstance;
+      PlayerState: { ENDED: number };
+    };
+    onYouTubeIframeAPIReady: () => void;
+  }
+}
+
 interface Props {
   config: SessionConfig;
   content: GeneratedContent;
+  onFindNew: (excludeVideoId: string) => Promise<void>;
   onEnd: () => void;
 }
 
@@ -15,153 +41,209 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function SessionPlayer({ config, content, onEnd }: Props) {
-  const totalSeconds = config.duration * 60;
-  const [timeLeft, setTimeLeft] = useState(totalSeconds);
-  const [isVisible, setIsVisible] = useState(false);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+export default function SessionPlayer({ config, content, onFindNew, onEnd }: Props) {
+  const isIndefinite = config.duration === null;
+  const totalSeconds = isIndefinite ? 0 : config.duration! * 60;
 
-  const progress = (timeLeft / totalSeconds) * 100;
-  const isNearEnd = timeLeft <= 60 && timeLeft > 0;
+  const [elapsed, setElapsed] = useState(0);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isFindingNew, setIsFindingNew] = useState(false);
+
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playerRef = useRef<YTPlayerInstance | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef(content);
+  contentRef.current = content;
+
+  const timeLeft = isIndefinite ? null : Math.max(0, totalSeconds - elapsed);
+  const progress = isIndefinite ? null : totalSeconds > 0 ? ((totalSeconds - elapsed) / totalSeconds) * 100 : 100;
+  const isNearEnd = timeLeft !== null && timeLeft <= 60 && timeLeft > 0;
 
   const handleEnd = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
+    playerRef.current?.destroy();
     setIsVisible(false);
-    setTimeout(onEnd, 600);
+    setTimeout(onEnd, 500);
   }, [onEnd]);
 
+  const handleFindNew = useCallback(async () => {
+    if (isFindingNew) return;
+    setIsFindingNew(true);
+    try {
+      await onFindNew(contentRef.current.videoId);
+    } finally {
+      setIsFindingNew(false);
+    }
+  }, [isFindingNew, onFindNew]);
+
+  // Fade in
   useEffect(() => {
     const t = setTimeout(() => setIsVisible(true), 50);
     return () => clearTimeout(t);
   }, []);
 
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = 0.7;
-      audioRef.current.play().catch(() => {});
-    }
-  }, []);
-
+  // Countdown timer
   useEffect(() => {
     timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
+      setElapsed((prev) => {
+        const next = prev + 1;
+        if (!isIndefinite && next >= totalSeconds) {
           clearInterval(timerRef.current!);
           setTimeout(handleEnd, 500);
-          return 0;
         }
-        return prev - 1;
+        return next;
       });
     }, 1000);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [handleEnd, isIndefinite, totalSeconds]);
+
+  // YouTube IFrame API — create player, detect video end for indefinite sessions
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const initPlayer = () => {
+      if (!containerRef.current) return;
+      playerRef.current?.destroy();
+      playerRef.current = new window.YT.Player(containerRef.current, {
+        videoId: content.videoId,
+        playerVars: {
+          autoplay: 1,
+          // Loop for timed sessions; no loop for indefinite (so we can detect end)
+          loop: isIndefinite ? 0 : 1,
+          playlist: content.videoId, // required for loop to work
+          controls: 1,
+          rel: 0,
+          modestbranding: 1,
+          iv_load_policy: 3,
+        },
+        events: {
+          onStateChange: (e) => {
+            if (e.data === window.YT.PlayerState.ENDED && isIndefinite) {
+              handleFindNew();
+            }
+          },
+        },
+      });
     };
-  }, [handleEnd]);
+
+    if (window.YT?.Player) {
+      initPlayer();
+    } else {
+      // Load the IFrame API script once
+      if (!document.getElementById("yt-iframe-api")) {
+        const script = document.createElement("script");
+        script.id = "yt-iframe-api";
+        script.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(script);
+      }
+      window.onYouTubeIframeAPIReady = initPlayer;
+    }
+
+    return () => {
+      playerRef.current?.destroy();
+      playerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only on mount — video changes handled below
+
+  // When videoId changes (Find New Flow), load into existing player
+  useEffect(() => {
+    if (playerRef.current) {
+      playerRef.current.loadVideoById(content.videoId);
+    }
+  }, [content.videoId]);
 
   return (
     <div
-      className={`fixed inset-0 transition-opacity duration-700 ${
+      className={`min-h-screen bg-gray-950 flex flex-col transition-opacity duration-700 ${
         isVisible ? "opacity-100" : "opacity-0"
       }`}
     >
-      {/* Background image with Ken Burns */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div
-          className="absolute inset-0 bg-cover bg-center ken-burns"
-          style={{ backgroundImage: `url(${content.image})` }}
-        />
+      {/* YouTube player */}
+      <div className="flex-1 w-full bg-black relative">
+        <div ref={containerRef} className="absolute inset-0 w-full h-full" />
+
+        {/* "Finding new flow" overlay */}
+        {isFindingNew && (
+          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-3 z-10">
+            <span className="inline-block w-8 h-8 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
+            <p className="text-white/60 text-sm tracking-widest uppercase">Finding new flow</p>
+          </div>
+        )}
       </div>
 
-      {/* Dark overlay */}
-      <div className="absolute inset-0 bg-black/50" />
+      {/* Info + controls bar */}
+      <div className="flex-shrink-0 bg-gray-950 border-t border-white/10 px-6 py-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
 
-      {/* Looping audio */}
-      <audio ref={audioRef} src={content.audio} loop preload="auto" />
+          {/* Task + track info */}
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <p className="text-white/90 text-sm font-medium truncate">{config.task}</p>
+            <p className="text-white/40 text-xs truncate">
+              {content.videoTitle} · {content.videoChannel}
+            </p>
+          </div>
 
-      {/* Content */}
-      <div className="relative z-10 h-full flex flex-col items-center justify-between px-6 py-12">
-        {/* Task label */}
-        <div className="text-center">
-          <p className="text-xs tracking-[0.3em] text-white/40 uppercase mb-1">
-            Working on
-          </p>
-          <p className="text-white/70 text-sm font-light max-w-sm text-center">
-            {config.task}
-          </p>
-        </div>
-
-        {/* Timer */}
-        <div className="flex flex-col items-center gap-6">
-          <div className="relative">
-            <div
-              className={`absolute inset-0 rounded-full blur-2xl transition-all duration-1000 ${
-                isNearEnd
-                  ? "bg-red-500/30 scale-150"
-                  : "bg-indigo-500/20 scale-125 animate-pulse"
-              }`}
-            />
-            <div
-              className={`relative w-48 h-48 rounded-full border flex items-center justify-center transition-colors duration-1000 ${
-                isNearEnd ? "border-red-400/40" : "border-indigo-400/30"
-              }`}
-            >
-              <svg
-                className="absolute inset-0 w-full h-full -rotate-90"
-                viewBox="0 0 192 192"
-              >
-                <circle
-                  cx="96" cy="96" r="88"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.05)"
-                  strokeWidth="2"
-                />
-                <circle
-                  cx="96" cy="96" r="88"
-                  fill="none"
-                  stroke={isNearEnd ? "rgba(248,113,113,0.6)" : "rgba(129,140,248,0.6)"}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeDasharray={`${2 * Math.PI * 88}`}
-                  strokeDashoffset={`${2 * Math.PI * 88 * (1 - progress / 100)}`}
-                  className="transition-all duration-1000"
-                />
-              </svg>
-              <div className="text-center">
-                <span
-                  className={`text-4xl font-extralight tabular-nums transition-colors duration-1000 ${
-                    isNearEnd ? "text-red-300" : "text-white"
-                  }`}
-                >
-                  {formatTime(timeLeft)}
+          {/* Timer */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {isIndefinite ? (
+              <div className="text-right">
+                <span className="text-2xl font-extralight tabular-nums leading-none text-white/60">
+                  {formatTime(elapsed)}
                 </span>
-                <p className="text-white/30 text-xs mt-1 tracking-widest uppercase">
-                  remaining
-                </p>
+                <p className="text-white/30 text-xs tracking-widest uppercase mt-0.5">elapsed</p>
               </div>
+            ) : (
+              <>
+                <div className="relative w-10 h-10">
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 40 40">
+                    <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="2.5" />
+                    <circle
+                      cx="20" cy="20" r="17" fill="none"
+                      stroke={isNearEnd ? "rgba(248,113,113,0.8)" : "rgba(129,140,248,0.8)"}
+                      strokeWidth="2.5" strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 17}`}
+                      strokeDashoffset={`${2 * Math.PI * 17 * (1 - (progress ?? 100) / 100)}`}
+                      className="transition-all duration-1000"
+                    />
+                  </svg>
+                </div>
+                <div className="text-right">
+                  <span className={`text-2xl font-extralight tabular-nums leading-none transition-colors duration-1000 ${
+                    isNearEnd ? "text-red-300" : "text-white"
+                  }`}>
+                    {formatTime(timeLeft!)}
+                  </span>
+                  <p className="text-white/30 text-xs tracking-widest uppercase mt-0.5">remaining</p>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="hidden sm:flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+              <span className="text-white/50 text-xs tracking-widest uppercase">{config.musicStyle}</span>
             </div>
+
+            <button
+              onClick={handleFindNew}
+              disabled={isFindingNew}
+              className="text-white/40 hover:text-white/80 text-xs tracking-[0.15em] uppercase transition-colors border border-white/10 hover:border-white/30 rounded-full px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              New Flow
+            </button>
+
+            <button
+              onClick={handleEnd}
+              className="text-white/40 hover:text-white/80 text-xs tracking-[0.15em] uppercase transition-colors border border-white/10 hover:border-white/30 rounded-full px-4 py-2"
+            >
+              End Session
+            </button>
           </div>
 
-          {/* Music style badge */}
-          <div className="flex items-center gap-2 bg-white/5 backdrop-blur-sm rounded-full px-4 py-1.5 border border-white/10">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-            <span className="text-white/50 text-xs tracking-widest uppercase">
-              {config.musicStyle}
-            </span>
-          </div>
         </div>
-
-        {/* End button */}
-        <button
-          onClick={handleEnd}
-          className="text-white/30 hover:text-white/70 text-xs tracking-[0.2em] uppercase transition-colors duration-200 border border-white/10 hover:border-white/30 rounded-full px-6 py-2.5 backdrop-blur-sm"
-        >
-          End Session
-        </button>
       </div>
     </div>
   );

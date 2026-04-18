@@ -8,9 +8,23 @@ import SessionPlayer from "./components/SessionPlayer";
 
 const initialStatus: LoadingStatus = {
   prompts: "pending",
-  image: "pending",
   music: "pending",
 };
+
+async function fetchVideo(
+  musicStyle: SessionConfig["musicStyle"],
+  duration: SessionConfig["duration"],
+  excludeVideoId?: string
+): Promise<GeneratedContent> {
+  const res = await fetch("/api/find-music", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ musicStyle, duration, excludeVideoId }),
+  });
+  if (!res.ok) throw new Error("Failed to find music");
+  const data = await res.json();
+  return { videoId: data.videoId, videoTitle: data.title, videoChannel: data.channel };
+}
 
 export default function Home() {
   const [appState, setAppState] = useState<AppState>("input");
@@ -26,7 +40,6 @@ export default function Home() {
     setAppState("loading");
 
     try {
-      // Step 1: Generate prompts via Gemini (with fallback)
       setLoadingStatus((s) => ({ ...s, prompts: "loading" }));
       const promptsRes = await fetch("/api/generate-prompts", {
         method: "POST",
@@ -37,35 +50,12 @@ export default function Home() {
           musicStyle: sessionConfig.musicStyle,
         }),
       });
-
       if (!promptsRes.ok) throw new Error("Failed to generate prompts");
-      const { imagePrompt, musicPrompt } = await promptsRes.json();
-      setLoadingStatus((s) => ({ ...s, prompts: "done", image: "loading", music: "loading" }));
+      setLoadingStatus((s) => ({ ...s, prompts: "done", music: "loading" }));
 
-      // Step 2: Generate image and music in parallel
-      const [imageRes, musicRes] = await Promise.all([
-        fetch("/api/generate-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imagePrompt }),
-        }),
-        fetch("/api/generate-music", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ musicPrompt }),
-        }),
-      ]);
-
-      if (!imageRes.ok) throw new Error("Failed to generate image");
-      if (!musicRes.ok) throw new Error("Failed to generate music");
-
-      const [imageData, musicData] = await Promise.all([
-        imageRes.json(),
-        musicRes.json(),
-      ]);
-
-      setLoadingStatus((s) => ({ ...s, image: "done", music: "done" }));
-      setContent({ image: imageData.image, audio: musicData.audio });
+      const newContent = await fetchVideo(sessionConfig.musicStyle, sessionConfig.duration);
+      setLoadingStatus((s) => ({ ...s, music: "done" }));
+      setContent(newContent);
       setAppState("session");
     } catch (err) {
       console.error(err);
@@ -73,15 +63,17 @@ export default function Home() {
       setLoadingStatus((s) => ({
         ...s,
         prompts: s.prompts === "loading" ? "error" : s.prompts,
-        image: s.image === "loading" ? "error" : s.image,
         music: s.music === "loading" ? "error" : s.music,
       }));
-      setTimeout(() => {
-        setAppState("input");
-        setError(null);
-      }, 3000);
+      setTimeout(() => { setAppState("input"); setError(null); }, 3000);
     }
   }, []);
+
+  const findNewVideo = useCallback(async (excludeVideoId: string) => {
+    if (!config) return;
+    const newContent = await fetchVideo(config.musicStyle, config.duration, excludeVideoId);
+    setContent(newContent);
+  }, [config]);
 
   const endSession = useCallback(() => {
     setAppState("input");
@@ -93,7 +85,7 @@ export default function Home() {
   return (
     <>
       {appState === "input" && (
-        <div className="transition-opacity duration-500">
+        <div>
           <InputScreen onStart={startSession} />
           {error && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-900/80 border border-red-700 text-red-200 text-sm px-5 py-3 rounded-xl backdrop-blur-sm">
@@ -102,15 +94,12 @@ export default function Home() {
           )}
         </div>
       )}
-
-      {appState === "loading" && (
-        <LoadingScreen status={loadingStatus} />
-      )}
-
+      {appState === "loading" && <LoadingScreen status={loadingStatus} />}
       {appState === "session" && config && content && (
         <SessionPlayer
           config={config}
           content={content}
+          onFindNew={findNewVideo}
           onEnd={endSession}
         />
       )}

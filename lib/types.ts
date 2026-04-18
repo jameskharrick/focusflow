@@ -7,7 +7,8 @@ export type MusicStyle =
   | "Electronic Focus"
   | "Epic/Cinematic";
 
-export type Duration = 5 | 10 | 15 | 20 | 25 | 30 | 45 | 60;
+// null = indefinite session
+export type Duration = number | null;
 
 export type AppState = "input" | "loading" | "session";
 
@@ -18,12 +19,12 @@ export interface SessionConfig {
 }
 
 export interface GeneratedContent {
-  image: string;
-  audio: string;
+  videoId: string;
+  videoTitle: string;
+  videoChannel: string;
 }
 
 export interface LoadingStatus {
   prompts: "pending" | "loading" | "done" | "error";
-  image: "pending" | "loading" | "done" | "error";
   music: "pending" | "loading" | "done" | "error";
 }
