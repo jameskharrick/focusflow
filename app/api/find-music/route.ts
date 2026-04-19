@@ -1,59 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { MusicStyle } from "@/lib/types";
 
-const STYLE_QUERY_VARIANTS: Record<MusicStyle, string[]> = {
+// Curated, YouTube-tested queries per style — used when Gemini is unavailable
+// Each variant surfaces a different slice of content on YouTube
+const STYLE_VARIANTS: Record<MusicStyle, string[]> = {
   "Lo-fi": [
-    "lofi hip hop beats study relax",
-    "lofi chill music work concentration",
-    "lofi hip hop radio beats to study",
-    "chill lofi beats homework focus",
-    "lofi music sleep study relax playlist",
+    "lofi hip hop beats study 1 hour",
+    "lofi chill music deep work 2 hours",
+    "lofi hip hop relax focus playlist",
+    "chill lofi music late night study",
+    "lofi beats concentration homework session",
+    "lofi hip hop jazzy study vibes",
   ],
   "Ambient": [
-    "ambient music focus deep work",
-    "atmospheric ambient soundscape concentration",
-    "ambient drone music study session",
-    "deep ambient music productivity",
-    "ambient electronic focus work background",
+    "ambient music deep focus work 1 hour",
+    "atmospheric ambient soundscape study 2 hours",
+    "ambient drone meditation music focus",
+    "peaceful ambient music concentration session",
+    "soft ambient music background work",
+    "ambient space music deep work flow",
   ],
   "Classical": [
-    "classical music studying focus piano",
-    "mozart beethoven focus study music",
-    "classical piano music work concentration",
-    "baroque music studying productivity",
-    "classical instrumental music deep work",
+    "classical piano music study focus 1 hour",
+    "mozart classical music studying concentration",
+    "bach classical music deep work session",
+    "beethoven piano focus work 2 hours",
+    "baroque classical music studying productivity",
+    "chopin piano relaxing study music",
   ],
   "Jazz": [
-    "smooth jazz music studying work cafe",
-    "jazz cafe music concentration background",
-    "chill jazz beats work study",
-    "smooth jazz instrumental focus playlist",
-    "jazz music work from home background",
+    "smooth jazz cafe music work concentration",
+    "jazz music studying focus background 1 hour",
+    "chill jazz instrumental work session",
+    "late night jazz music deep focus",
+    "smooth jazz piano coffee shop work",
+    "jazz trio background music concentration",
   ],
   "Nature Sounds": [
-    "nature sounds rain forest ambient study",
-    "rain sounds focus study sleep",
-    "forest birds nature white noise work",
-    "thunderstorm rain sounds concentration",
-    "ocean waves nature sounds relaxation focus",
+    "rain sounds study focus 1 hour",
+    "forest nature sounds deep work ambient",
+    "thunderstorm rain concentration sleep study",
+    "ocean waves nature sounds relax focus",
+    "rain on window study music ambience",
+    "nature white noise birds focus work",
   ],
   "Electronic Focus": [
-    "electronic focus music deep work binaural",
-    "techno minimal electronic work concentration",
-    "electronic study music focus beats",
-    "deep house electronic focus productivity",
-    "minimal electronic ambient work music",
+    "electronic focus music deep work 1 hour",
+    "binaural beats study concentration music",
+    "minimal techno deep focus work session",
+    "electronic ambient productivity music 2 hours",
+    "deep house background work music focus",
+    "synthwave electronic study music beats",
   ],
   "Epic/Cinematic": [
-    "epic cinematic music focus motivation work",
-    "cinematic orchestral study music",
-    "epic background music concentration",
-    "hans zimmer style focus music",
-    "dramatic orchestral music deep work",
+    "epic cinematic music focus motivation 1 hour",
+    "cinematic orchestral study music concentration",
+    "hans zimmer style background work music",
+    "epic orchestral music deep work session",
+    "dramatic cinematic background music focus",
+    "powerful orchestral music productivity motivation",
+  ],
+  "Nightcore": [
+    "nightcore mix gaming music 1 hour",
+    "nightcore anime songs mix playlist",
+    "best nightcore songs collection 2 hours",
+    "nightcore electronic gaming music mix",
+    "nightcore upbeat songs mix playlist",
+    "nightcore music mix concentrate focus",
   ],
 };
-
-const DURATION_HINTS = ["1 hour", "2 hours", "3 hours", "mix", "playlist", "compilation"];
 
 function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -73,25 +88,67 @@ function parseIsoDuration(iso: string): number {
   );
 }
 
-// Maps task keywords to short mood terms that complement YouTube music searches
-const TASK_KEYWORD_MAP: { pattern: RegExp; keyword: string }[] = [
-  { pattern: /cod|program|develop|engineer|debug|software/i, keyword: "coding" },
-  { pattern: /writ|essay|blog|copywrite|journal|draft/i, keyword: "writing" },
-  { pattern: /study|learn|exam|homework|lecture|course/i, keyword: "studying" },
-  { pattern: /design|ui|ux|figma|sketch|creative/i, keyword: "creative" },
-  { pattern: /read|research|analys|review/i, keyword: "reading" },
-  { pattern: /math|calc|statistic|data|spread/i, keyword: "focus" },
-  { pattern: /draw|paint|art|illustrat/i, keyword: "creative" },
-  { pattern: /meditat|relax|breath|mindful/i, keyword: "relaxing" },
-  { pattern: /plan|strateg|brainstorm|think/i, keyword: "thinking" },
-  { pattern: /meet|present|prep|practice/i, keyword: "focus" },
-];
+const STYLE_BASE: Record<MusicStyle, string> = {
+  "Lo-fi": "lofi hip hop",
+  "Ambient": "ambient music",
+  "Classical": "classical piano",
+  "Jazz": "smooth jazz",
+  "Nature Sounds": "nature sounds",
+  "Electronic Focus": "electronic focus music",
+  "Epic/Cinematic": "cinematic orchestral",
+  "Nightcore": "nightcore mix",
+};
 
-function deriveTaskKeyword(task: string): string {
-  for (const { pattern, keyword } of TASK_KEYWORD_MAP) {
-    if (pattern.test(task)) return keyword;
+const STOP_WORDS = new Set([
+  "a","an","the","and","or","but","for","to","of","in","on","at","is","am","are",
+  "was","were","be","been","have","has","do","does","did","will","would","could",
+  "should","can","i","my","me","we","our","you","your","it","its","this","that",
+  "with","from","as","by","about","up","into","some","any","just","new","some",
+  "working","on","im","going","need","want","trying","making","building","creating",
+]);
+
+function taskQuery(task: string, style: MusicStyle): string {
+  const keywords = task
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w))
+    .slice(0, 2)
+    .join(" ");
+
+  const base = STYLE_BASE[style];
+  return keywords ? `${base} ${keywords} music focus` : STYLE_VARIANTS[style][0];
+}
+
+type SearchItem = { id: { videoId: string }; snippet: { title: string; channelTitle: string } };
+
+async function runSearch(
+  query: string,
+  videoDuration: string,
+  apiKey: string,
+): Promise<SearchItem[]> {
+  const params = new URLSearchParams({
+    part: "snippet",
+    q: query,
+    type: "video",
+    videoDuration,
+    videoEmbeddable: "true",
+    order: "relevance",
+    maxResults: "25",
+    safeSearch: "strict",
+    key: apiKey,
+  });
+  const res = await fetch(
+    `https://www.googleapis.com/youtube/v3/search?${params}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.error("[find-music] YouTube search error:", res.status, body.slice(0, 300));
+    return [];
   }
-  return "";
+  const data = await res.json();
+  return data.items ?? [];
 }
 
 export async function POST(req: NextRequest) {
@@ -110,71 +167,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "YOUTUBE_API_KEY not configured" }, { status: 500 });
     }
 
-    const variants = STYLE_QUERY_VARIANTS[musicStyle];
-    const baseQuery = variants[Math.floor(Math.random() * variants.length)];
-
-    // Derive a short mood keyword from the task so the search stays genre-focused
-    const taskKeyword = deriveTaskKeyword(task ?? "");
-
-    const hint = Math.random() < 0.6
-      ? DURATION_HINTS[Math.floor(Math.random() * DURATION_HINTS.length)]
-      : (duration === null || duration >= 60 ? "2 hours" : duration >= 30 ? "1 hour" : "");
-    const query = [baseQuery, taskKeyword, hint].filter(Boolean).join(" ");
-
-    const order = Math.random() < 0.5 ? "relevance" : "viewCount";
+    const apiKey = process.env.YOUTUBE_API_KEY;
     const videoDuration = duration === null || duration > 20 ? "long" : "medium";
+    const variants = shuffle([...STYLE_VARIANTS[musicStyle]]);
 
-    console.log(`[find-music] query="${query}" order=${order} videoDuration=${videoDuration}`);
+    // Search A: task-aware query built from extracted keywords + style base
+    // Search B: curated style variant for variety
+    const queryA = task?.trim() ? taskQuery(task.trim(), musicStyle) : variants[0];
+    console.log("[find-music] search A query:", queryA);
 
-    const searchParams = new URLSearchParams({
-      part: "snippet",
-      q: query,
-      type: "video",
-      videoDuration,
-      videoEmbeddable: "true",
-      order,
-      maxResults: "25",
-      safeSearch: "strict",
-      key: process.env.YOUTUBE_API_KEY,
-    });
+    const [results1, results2] = await Promise.all([
+      runSearch(queryA, videoDuration, apiKey),
+      runSearch(variants[1] ?? variants[0], videoDuration, apiKey),
+    ]);
 
-    const searchRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?${searchParams}`,
-      { cache: "no-store" }
-    );
-
-    if (!searchRes.ok) {
-      const err = await searchRes.json().catch(() => ({}));
-      console.error("[find-music] YouTube search failed:", searchRes.status, JSON.stringify(err));
-      return NextResponse.json(
-        { error: `YouTube search failed (${searchRes.status})` },
-        { status: 502 }
-      );
+    // Merge and deduplicate
+    const seen = new Set<string>();
+    const merged: SearchItem[] = [];
+    for (const item of shuffle([...results1, ...results2])) {
+      if (!seen.has(item.id.videoId)) {
+        seen.add(item.id.videoId);
+        merged.push(item);
+      }
     }
 
-    const searchData = await searchRes.json();
-    const items: { id: { videoId: string }; snippet: { title: string; channelTitle: string } }[] =
-      searchData.items ?? [];
-
-    console.log(`[find-music] got ${items.length} results`);
-
-    if (!items.length) {
+    if (!merged.length) {
       return NextResponse.json({ error: "No videos found" }, { status: 404 });
     }
 
-    // Fetch content details to check embeddability and duration
-    const videoIds = items.map((i) => i.id.videoId).join(",");
+    // Verify embeddability + duration
+    const videoIds = merged.map((i) => i.id.videoId).join(",");
     const detailParams = new URLSearchParams({
       part: "contentDetails,status",
       id: videoIds,
-      key: process.env.YOUTUBE_API_KEY,
+      key: apiKey,
     });
-
     const detailRes = await fetch(
       `https://www.googleapis.com/youtube/v3/videos?${detailParams}`,
       { cache: "no-store" }
     );
-
     const detailData = detailRes.ok ? await detailRes.json() : { items: [] };
     const details: {
       id: string;
@@ -188,26 +219,13 @@ export async function POST(req: NextRequest) {
       embeddable.set(d.id, parseIsoDuration(d.contentDetails.duration));
     }
 
-    console.log(`[find-music] ${embeddable.size} embeddable videos`);
-
     const minSecs = duration ? duration * 60 : 20 * 60;
-    const shuffled = shuffle([...items]);
 
-    const longEnough = shuffled.filter(
-      (i) => i.id.videoId !== excludeVideoId && (embeddable.get(i.id.videoId) ?? 0) >= minSecs
-    );
+    const longEnough    = merged.filter((i) => i.id.videoId !== excludeVideoId && (embeddable.get(i.id.videoId) ?? 0) >= minSecs);
+    const anyEmbeddable = merged.filter((i) => i.id.videoId !== excludeVideoId && embeddable.has(i.id.videoId));
+    const anyResult     = merged.filter((i) => i.id.videoId !== excludeVideoId);
 
-    // Fall back: any embeddable video regardless of duration
-    const anyEmbeddable = shuffled.filter(
-      (i) => i.id.videoId !== excludeVideoId && embeddable.has(i.id.videoId)
-    );
-
-    // Last resort: any result except the excluded one
-    const anyResult = shuffled.filter((i) => i.id.videoId !== excludeVideoId);
-
-    const pick = (longEnough[0] ?? anyEmbeddable[0] ?? anyResult[0] ?? items[0]);
-
-    console.log(`[find-music] picked videoId=${pick.id.videoId} title="${pick.snippet.title}"`);
+    const pick = longEnough[0] ?? anyEmbeddable[0] ?? anyResult[0] ?? merged[0];
 
     return NextResponse.json({
       videoId: pick.id.videoId,

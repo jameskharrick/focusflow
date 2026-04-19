@@ -5,7 +5,8 @@ export type MusicStyle =
   | "Jazz"
   | "Nature Sounds"
   | "Electronic Focus"
-  | "Epic/Cinematic";
+  | "Epic/Cinematic"
+  | "Nightcore";
 
 // null = indefinite session
 export type Duration = number | null;

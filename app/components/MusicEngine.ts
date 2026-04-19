@@ -47,6 +47,11 @@ const PROFILES: Record<MusicStyle, MusicProfile> = {
     notes: ["C3", "G3", "C4", "E4", "F3", "C4", "F4", "A4"],
     chordIntervalMs: 3000, padAttack: 0.8, padRelease: 3.5,
   },
+  "Nightcore": {
+    bpm: 160, reverb: 0.3, delay: 0.15,
+    notes: ["C4", "E4", "G4", "B4", "D5", "F#4", "A4", "C5"],
+    chordIntervalMs: 800, padAttack: 0.05, padRelease: 0.5,
+  },
 };
 
 export class MusicEngine {

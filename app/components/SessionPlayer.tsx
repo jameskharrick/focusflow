@@ -51,6 +51,8 @@ export default function SessionPlayer({ config, content, onFindNew, onEnd }: Pro
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const playerRef = useRef<YTPlayerInstance | null>(null);
+  const playerReadyRef = useRef(false);
+  const pendingVideoIdRef = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef(content);
   contentRef.current = content;
@@ -104,19 +106,26 @@ export default function SessionPlayer({ config, content, onFindNew, onEnd }: Pro
     const initPlayer = () => {
       if (!containerRef.current) return;
       playerRef.current?.destroy();
+      playerReadyRef.current = false;
       playerRef.current = new window.YT.Player(containerRef.current, {
         videoId: content.videoId,
         playerVars: {
           autoplay: 1,
-          // Loop for timed sessions; no loop for indefinite (so we can detect end)
           loop: isIndefinite ? 0 : 1,
-          playlist: content.videoId, // required for loop to work
+          playlist: content.videoId,
           controls: 1,
           rel: 0,
           modestbranding: 1,
           iv_load_policy: 3,
         },
         events: {
+          onReady: () => {
+            playerReadyRef.current = true;
+            if (pendingVideoIdRef.current) {
+              playerRef.current?.loadVideoById(pendingVideoIdRef.current);
+              pendingVideoIdRef.current = null;
+            }
+          },
           onStateChange: (e) => {
             if (e.data === window.YT.PlayerState.ENDED && isIndefinite) {
               handleFindNew();
@@ -142,14 +151,18 @@ export default function SessionPlayer({ config, content, onFindNew, onEnd }: Pro
     return () => {
       playerRef.current?.destroy();
       playerRef.current = null;
+      playerReadyRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only on mount — video changes handled below
 
   // When videoId changes (Find New Flow), load into existing player
   useEffect(() => {
-    if (playerRef.current) {
+    if (!playerRef.current) return;
+    if (playerReadyRef.current) {
       playerRef.current.loadVideoById(content.videoId);
+    } else {
+      pendingVideoIdRef.current = content.videoId;
     }
   }, [content.videoId]);
 

@@ -12,6 +12,7 @@ const MUSIC_STYLES: MusicStyle[] = [
   "Nature Sounds",
   "Electronic Focus",
   "Epic/Cinematic",
+  "Nightcore",
 ];
 
 type DurationMode = "preset" | "custom" | "indefinite";
