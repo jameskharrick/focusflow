@@ -13,12 +13,13 @@ const initialStatus: LoadingStatus = {
 async function fetchVideo(
   musicStyle: SessionConfig["musicStyle"],
   duration: SessionConfig["duration"],
+  task: string,
   excludeVideoId?: string
 ): Promise<GeneratedContent> {
   const res = await fetch("/api/find-music", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ musicStyle, duration, excludeVideoId }),
+    body: JSON.stringify({ musicStyle, duration, task, excludeVideoId }),
   });
   if (!res.ok) throw new Error("Failed to find music");
   const data = await res.json();
@@ -41,7 +42,7 @@ export default function Home() {
     try {
       setLoadingStatus((s) => ({ ...s, prompts: "done", music: "loading" }));
 
-      const newContent = await fetchVideo(sessionConfig.musicStyle, sessionConfig.duration);
+      const newContent = await fetchVideo(sessionConfig.musicStyle, sessionConfig.duration, sessionConfig.task);
       setLoadingStatus((s) => ({ ...s, music: "done" }));
       setContent(newContent);
       setAppState("session");
@@ -58,7 +59,7 @@ export default function Home() {
 
   const findNewVideo = useCallback(async (excludeVideoId: string) => {
     if (!config) return;
-    const newContent = await fetchVideo(config.musicStyle, config.duration, excludeVideoId);
+    const newContent = await fetchVideo(config.musicStyle, config.duration, config.task, excludeVideoId);
     setContent(newContent);
   }, [config]);
 

@@ -73,11 +73,33 @@ function parseIsoDuration(iso: string): number {
   );
 }
 
+// Maps task keywords to short mood terms that complement YouTube music searches
+const TASK_KEYWORD_MAP: { pattern: RegExp; keyword: string }[] = [
+  { pattern: /cod|program|develop|engineer|debug|software/i, keyword: "coding" },
+  { pattern: /writ|essay|blog|copywrite|journal|draft/i, keyword: "writing" },
+  { pattern: /study|learn|exam|homework|lecture|course/i, keyword: "studying" },
+  { pattern: /design|ui|ux|figma|sketch|creative/i, keyword: "creative" },
+  { pattern: /read|research|analys|review/i, keyword: "reading" },
+  { pattern: /math|calc|statistic|data|spread/i, keyword: "focus" },
+  { pattern: /draw|paint|art|illustrat/i, keyword: "creative" },
+  { pattern: /meditat|relax|breath|mindful/i, keyword: "relaxing" },
+  { pattern: /plan|strateg|brainstorm|think/i, keyword: "thinking" },
+  { pattern: /meet|present|prep|practice/i, keyword: "focus" },
+];
+
+function deriveTaskKeyword(task: string): string {
+  for (const { pattern, keyword } of TASK_KEYWORD_MAP) {
+    if (pattern.test(task)) return keyword;
+  }
+  return "";
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { musicStyle, duration, excludeVideoId } = await req.json() as {
+    const { musicStyle, duration, task, excludeVideoId } = await req.json() as {
       musicStyle: MusicStyle;
       duration: number | null;
+      task?: string;
       excludeVideoId?: string;
     };
 
@@ -91,10 +113,13 @@ export async function POST(req: NextRequest) {
     const variants = STYLE_QUERY_VARIANTS[musicStyle];
     const baseQuery = variants[Math.floor(Math.random() * variants.length)];
 
+    // Derive a short mood keyword from the task so the search stays genre-focused
+    const taskKeyword = deriveTaskKeyword(task ?? "");
+
     const hint = Math.random() < 0.6
       ? DURATION_HINTS[Math.floor(Math.random() * DURATION_HINTS.length)]
       : (duration === null || duration >= 60 ? "2 hours" : duration >= 30 ? "1 hour" : "");
-    const query = hint ? `${baseQuery} ${hint}` : baseQuery;
+    const query = [baseQuery, taskKeyword, hint].filter(Boolean).join(" ");
 
     const order = Math.random() < 0.5 ? "relevance" : "viewCount";
     const videoDuration = duration === null || duration > 20 ? "long" : "medium";
