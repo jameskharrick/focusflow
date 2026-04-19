@@ -7,7 +7,6 @@ import LoadingScreen from "./components/LoadingScreen";
 import SessionPlayer from "./components/SessionPlayer";
 
 const initialStatus: LoadingStatus = {
-  prompts: "pending",
   music: "pending",
 };
 
@@ -40,17 +39,6 @@ export default function Home() {
     setAppState("loading");
 
     try {
-      setLoadingStatus((s) => ({ ...s, prompts: "loading" }));
-      const promptsRes = await fetch("/api/generate-prompts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          task: sessionConfig.task,
-          duration: sessionConfig.duration,
-          musicStyle: sessionConfig.musicStyle,
-        }),
-      });
-      if (!promptsRes.ok) throw new Error("Failed to generate prompts");
       setLoadingStatus((s) => ({ ...s, prompts: "done", music: "loading" }));
 
       const newContent = await fetchVideo(sessionConfig.musicStyle, sessionConfig.duration);
@@ -62,7 +50,6 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoadingStatus((s) => ({
         ...s,
-        prompts: s.prompts === "loading" ? "error" : s.prompts,
         music: s.music === "loading" ? "error" : s.music,
       }));
       setTimeout(() => { setAppState("input"); setError(null); }, 3000);

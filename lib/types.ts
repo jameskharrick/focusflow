@@ -25,6 +25,5 @@ export interface GeneratedContent {
 }
 
 export interface LoadingStatus {
-  prompts: "pending" | "loading" | "done" | "error";
   music: "pending" | "loading" | "done" | "error";
 }
