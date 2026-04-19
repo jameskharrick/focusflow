@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "FocusFlow — AI Ambient Focus Sessions",
-  description: "AI-generated ambient music and visuals for deep focus work sessions.",
+  title: "FocusFlow",
+  description: "Set a task, pick a vibe, and stay in flow with curated YouTube music.",
 };
 
 export default function RootLayout({
