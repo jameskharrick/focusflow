@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
 
     const searchRes = await fetch(
       `https://www.googleapis.com/youtube/v3/search?${searchParams}`,
-      { next: { revalidate: 0 } }
+      { cache: "no-store" }
     );
 
     if (!searchRes.ok) {
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
 
     const detailRes = await fetch(
       `https://www.googleapis.com/youtube/v3/videos?${detailParams}`,
-      { next: { revalidate: 0 } }
+      { cache: "no-store" }
     );
 
     const detailData = detailRes.ok ? await detailRes.json() : { items: [] };

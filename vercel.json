@@ -1,10 +1,7 @@
 {
   "functions": {
-    "app/api/generate-music/route.ts": {
-      "maxDuration": 150
-    },
-    "app/api/generate-image/route.ts": {
-      "maxDuration": 150
+    "app/api/find-music/route.ts": {
+      "maxDuration": 30
     }
   }
 }
